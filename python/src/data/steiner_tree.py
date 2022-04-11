@@ -1,4 +1,3 @@
-from turtle import xcor
 from igraph import Graph
 import pandas as pd
 from collections import Counter
@@ -84,7 +83,7 @@ def sca(idlist, graph, adj):
                 for cand in candidates:
                     cand_dict[cand] = len([id_ for id_ in idlist if id_ in np.argwhere(
                         adj[:, cand] == 1).flatten().tolist()])/len(np.argwhere(adj[:, cand] == 1).flatten().tolist())
-                candidates = [max(cand_dict, key=cand_dict.get)]
+                candidates = [key for key, value in cand_dict.items() if value == max(cand_dict.values())]
 
             idlist.append(candidates[0])
             added_nodes.append(candidates[0])
@@ -97,3 +96,54 @@ def sca(idlist, graph, adj):
     main_component = [idlist[node] for node in final_component]
     conservative_module = list(set(original_nodes) & set(main_component))
     return pd.Series([main_component, conservative_module, added_nodes])
+
+
+def sca_analytics(idlist, graph, adj, process):
+    print()
+    added_nodes = []
+    increase = True
+    original_nodes = idlist[:]
+    df_dict = {'process':[], 'n_clusters': [], 'n_candidates':[], 'best_candidate':[], 'best_ratio':[]}
+    while increase:
+        subgraph = graph.induced_subgraph(idlist)
+        components = Graph.clusters(subgraph, mode='strong')
+        df_dict['process'].append(process)
+        df_dict['n_clusters'].append(len(components))
+        comp_adj_matrix = adj[:, sorted(idlist)]
+        lcc = max([len(component) for component in components])
+        ind_comp_adj_matrices = [comp_adj_matrix[:, comp]
+                                 for comp in components]
+        max_addition = []
+        for ind_comp in ind_comp_adj_matrices:
+            n_int = np.sum(ind_comp, axis=1)
+            n_int[n_int >= 1] = ind_comp.shape[1]
+            max_addition.append(n_int)
+        max_addition = np.array(max_addition).transpose()
+        max_addition_total = np.array(max_addition).sum(axis=1)
+        if max(max_addition_total) > lcc:
+            increase = True
+            candidates = np.argwhere(max_addition_total == np.amax(
+                max_addition_total)).flatten().tolist()
+            df_dict['n_candidates'].append(len(candidates))
+            cand_dict = {}
+            for cand in candidates:
+                cand_dict[cand] = len([id_ for id_ in idlist if id_ in np.argwhere(
+                        adj[:, cand] == 1).flatten().tolist()])/len(np.argwhere(adj[:, cand] == 1).flatten().tolist())
+            #df_dict['canditates_ratio'].append(cand_dict)
+            candidates = [key for key, value in cand_dict.items() if value == max(cand_dict.values())]
+            df_dict['best_candidate'].append(candidates[0])
+            df_dict['best_ratio'].append(max(cand_dict.values()))
+            idlist.append(candidates[0])
+            added_nodes.append(candidates[0])
+
+        else:
+            increase = False
+    df_dict['n_candidates'].append(0)
+    df_dict['best_candidate'].append(0)
+    df_dict['best_ratio'].append(0)
+    subgraph = graph.induced_subgraph(idlist)
+    final_components = list(Graph.clusters(subgraph, mode='strong'))
+    final_component = max(final_components, key=len)
+    main_component = [idlist[node] for node in final_component]
+    conservative_module = list(set(original_nodes) & set(main_component))
+    return pd.DataFrame.from_dict(df_dict)
